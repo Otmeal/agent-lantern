@@ -1,0 +1,4 @@
+* text=auto
+
+# 這些檔案會被複製到 Linux / WSL 上直接執行，CRLF 會讓 shebang 失效。
+*.sh text eol=lf

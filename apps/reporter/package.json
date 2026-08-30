@@ -14,7 +14,7 @@
   "scripts": {
     "build": "tsup",
     "lint": "tsc -p tsconfig.json --noEmit",
-    "pack:distribution": "pnpm pack --pack-destination ../../dist-packages",
+    "pack:distribution": "pnpm build && pnpm pack --pack-destination ../../dist-packages",
     "test": "vitest run --passWithNoTests",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

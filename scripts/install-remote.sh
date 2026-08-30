@@ -110,6 +110,14 @@ if [ "$skip_install" -eq 0 ]; then
   [ -n "$tarball" ] || fail "找不到 agent-status-reporter-*.tgz，請用 --tarball 指定。"
   [ -f "$tarball" ] || fail "找不到檔案：$tarball"
 
+  # 沒有先 build 就 pnpm pack 的話，tarball 會只剩 package.json 而沒有 dist/，
+  # 安裝起來不會報錯但也不會產生任何指令，所以先擋掉。
+  if ! tar -tzf "$tarball" 2>/dev/null | grep -q '^package/dist/index\.js$'; then
+    fail "$tarball 裡沒有 package/dist/index.js。
+這個 tarball 是在尚未建置的情況下打包出來的。請在打包的機器上重新執行
+\`pnpm pack:reporter\`（會先跑 build），再把新的 .tgz 複製到這台機器。"
+  fi
+
   if [ -z "$install_prefix" ]; then
     global_prefix=$(npm prefix --global 2>/dev/null || echo "")
     if [ -n "$global_prefix" ] && [ -w "$global_prefix/lib" ]; then
@@ -121,7 +129,10 @@ if [ "$skip_install" -eq 0 ]; then
   fi
 
   echo "install-remote: 安裝 $tarball 到 $install_prefix"
-  npm install --global --prefix "$install_prefix" "$tarball" >/dev/null
+  if ! npm_output=$(npm install --global --prefix "$install_prefix" "$tarball" 2>&1); then
+    printf '%s\n' "$npm_output" >&2
+    fail "npm install 失敗，詳細訊息如上。"
+  fi
   reporter_binary="$install_prefix/bin/agent-status-reporter"
 else
   reporter_binary=$(command -v agent-status-reporter || echo "")

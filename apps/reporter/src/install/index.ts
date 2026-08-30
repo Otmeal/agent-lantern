@@ -74,14 +74,37 @@ function findExecutableOnPath(
   return undefined;
 }
 
+async function fetchDaemon(
+  url: string,
+  init: RequestInit,
+  description: string,
+): Promise<Response> {
+  try {
+    return await fetch(url, init);
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `連不上 ${url}（${description}）：${reason}
+請依序確認：
+  1. Windows 上的 overlay 正在執行，daemon 有在監聽這個連接埠。
+  2. 這個位址從本機連得到。WSL 若使用 mirrored networking，無法用 Windows
+     自己的 LAN / Tailscale IP，請把 endpoint 改成 http://localhost:<port>。
+  3. Windows 防火牆允許該連接埠的輸入連線。
+設定檔已經寫好了，修正連線後可以加上 --skip-install 重跑來驗證。`,
+    );
+  }
+}
+
 async function verifyDaemonConnection(
   daemonEndpoint: string,
   token: string,
   hostName: string,
 ): Promise<void> {
-  const healthResponse = await fetch(`${daemonEndpoint}/health`, {
-    signal: AbortSignal.timeout(5_000),
-  });
+  const healthResponse = await fetchDaemon(
+    `${daemonEndpoint}/health`,
+    { signal: AbortSignal.timeout(5_000) },
+    "健康檢查",
+  );
   if (!healthResponse.ok) {
     throw new Error(
       `daemon ${daemonEndpoint}/health 回應 ${healthResponse.status}。請確認 overlay 已啟動、endpoint 與防火牆設定正確。`,
@@ -103,15 +126,19 @@ async function verifyDaemonConnection(
     metadata: {},
   });
 
-  const eventResponse = await fetch(`${daemonEndpoint}/api/v1/events`, {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${token}`,
-      "content-type": "application/json",
+  const eventResponse = await fetchDaemon(
+    `${daemonEndpoint}/api/v1/events`,
+    {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(event),
+      signal: AbortSignal.timeout(5_000),
     },
-    body: JSON.stringify(event),
-    signal: AbortSignal.timeout(5_000),
-  });
+    "測試事件",
+  );
 
   if (!eventResponse.ok) {
     const responseText = await eventResponse.text();
@@ -124,6 +151,17 @@ async function verifyDaemonConnection(
 async function runInstall(options: InstallOptions): Promise<void> {
   const prefix = options.dryRun ? "[dry-run] " : "";
   const lines: string[] = [];
+
+  // sudo 會把 HOME 換成 /root，hook 與 environment 就會寫到 root 的家目錄，
+  // 而代理程式通常是以原本的使用者身分執行，根本讀不到。
+  const sudoUser = process.env.SUDO_USER;
+  if (process.getuid?.() === 0 && sudoUser) {
+    lines.push(
+      `注意：目前透過 sudo 以 root 執行，設定會寫進 ${homedir()}，` +
+        `而不是 ${sudoUser} 的家目錄。若 Codex / Claude Code 是以 ${sudoUser} ` +
+        `執行，請不要加 sudo 重跑一次（reporter 已安裝好，可加 --skip-install）。`,
+    );
+  }
 
   if (options.commandPath === undefined) {
     const resolved = findExecutableOnPath(reporterCommandName, process.env);
@@ -228,6 +266,10 @@ async function runInstall(options: InstallOptions): Promise<void> {
     }
   }
 
+  // 寫檔結果先輸出，連線驗證失敗時使用者才知道設定其實已經寫好了。
+  console.log(lines.join("\n"));
+  lines.length = 0;
+
   // 3. 連線驗證。
   if (options.verifyConnection && !options.dryRun) {
     const environment = await loadReporterEnvironment(process.env);
@@ -252,7 +294,9 @@ async function runInstall(options: InstallOptions): Promise<void> {
     lines.push(`${prefix}跳過連線驗證。`);
   }
 
-  console.log(lines.join("\n"));
+  if (lines.length > 0) {
+    console.log(lines.join("\n"));
+  }
   if (!options.dryRun) {
     console.log(
       "\n請重新啟動 Codex / Claude Code，並執行 /hooks 確認新的 hook 已被信任。",
