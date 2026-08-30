@@ -1,0 +1,423 @@
+:root {
+  font-family:
+    "Segoe UI Variable Text", "Microsoft JhengHei UI", system-ui, sans-serif;
+  color: #f7f8fa;
+  background: transparent;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#application {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+}
+
+button {
+  font: inherit;
+}
+
+.lantern-shell {
+  display: flex;
+  flex-direction: column;
+  height: calc(100% - 12px);
+  margin: 6px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 15% 0%, rgba(255, 188, 82, 0.2), transparent 34%),
+    linear-gradient(145deg, rgba(24, 28, 36, 0.97), rgba(11, 13, 18, 0.96));
+  box-shadow:
+    0 18px 60px rgba(0, 0, 0, 0.45),
+    inset 0 1px rgba(255, 255, 255, 0.06);
+}
+
+.title-bar {
+  display: flex;
+  align-items: center;
+  min-height: 66px;
+  padding: 14px 12px 12px 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  user-select: none;
+}
+
+.brand-mark {
+  position: relative;
+  width: 34px;
+  height: 34px;
+  margin-right: 11px;
+  border: 1px solid rgba(255, 209, 125, 0.38);
+  border-radius: 12px;
+  background: rgba(255, 180, 65, 0.12);
+}
+
+.brand-mark::before,
+.brand-mark::after {
+  position: absolute;
+  content: "";
+  border-radius: 999px;
+}
+
+.brand-mark::before {
+  inset: 9px;
+  background: #ffb640;
+  box-shadow: 0 0 18px #ffae2c;
+}
+
+.brand-mark::after {
+  inset: 5px;
+  border: 1px solid rgba(255, 198, 104, 0.35);
+}
+
+.brand-copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.brand-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 680;
+  letter-spacing: 0.02em;
+}
+
+.brand-subtitle {
+  margin: 3px 0 0;
+  color: #979eaa;
+  font-size: 11px;
+}
+
+.window-actions {
+  display: flex;
+  align-self: flex-start;
+  gap: 3px;
+}
+
+.window-button,
+.refresh-button {
+  display: grid;
+  place-items: center;
+  border: 0;
+  color: #aeb4be;
+  background: transparent;
+  cursor: pointer;
+}
+
+.window-button {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  font-size: 15px;
+}
+
+.window-button:hover,
+.refresh-button:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.content {
+  min-height: 0;
+  padding: 13px;
+  overflow-y: auto;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+  scrollbar-width: thin;
+}
+
+.summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 3px 12px;
+}
+
+.summary-copy {
+  color: #aeb4be;
+  font-size: 12px;
+}
+
+.summary-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.refresh-button {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  font-size: 17px;
+}
+
+.text-button {
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  color: #c9ced6;
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 11px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.text-button:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.setup-panel {
+  margin: 0 3px 14px;
+  padding: 11px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.setup-row + .setup-row {
+  margin-top: 9px;
+}
+
+.setup-label {
+  display: block;
+  margin-bottom: 4px;
+  color: #838a96;
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.setup-value-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.setup-value {
+  overflow: hidden;
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
+  border-radius: 7px;
+  color: #e8ebef;
+  background: rgba(0, 0, 0, 0.28);
+  font-family: "Cascadia Code", monospace;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 安裝指令通常比面板寬，讓它可以橫向捲動而不是被截斷。 */
+.setup-value-command {
+  overflow-x: auto;
+  text-overflow: clip;
+}
+
+.copy-button {
+  flex-shrink: 0;
+  height: 26px;
+  padding: 0 9px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 7px;
+  color: #c9ced6;
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 10px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.copy-button:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.setup-hint {
+  margin: 9px 0 0;
+  color: #777f8c;
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+.setup-hint code {
+  color: #9aa1ab;
+  font-family: "Cascadia Code", monospace;
+}
+
+.host-section + .host-section {
+  margin-top: 18px;
+}
+
+.host-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 3px 8px;
+  color: #c9ced6;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.host-heading::before {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #5dd49b;
+  box-shadow: 0 0 9px rgba(93, 212, 155, 0.8);
+  content: "";
+}
+
+.workspace-block {
+  margin-top: 8px;
+}
+
+.workspace-name {
+  margin: 0 4px 7px;
+  overflow: hidden;
+  color: #777f8c;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: 37px minmax(0, 1fr) auto;
+  gap: 11px;
+  align-items: center;
+  margin-top: 7px;
+  padding: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.session-card::after {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--status-color);
+  content: "";
+}
+
+.agent-icon {
+  display: grid;
+  width: 37px;
+  height: 37px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--status-color), transparent 62%);
+  border-radius: 12px;
+  color: var(--status-color);
+  background: color-mix(in srgb, var(--status-color), transparent 88%);
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.session-copy {
+  min-width: 0;
+}
+
+.session-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+}
+
+.agent-name {
+  color: #f4f5f7;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.session-identifier {
+  overflow: hidden;
+  color: #69717e;
+  font-family: "Cascadia Code", monospace;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-message {
+  margin-top: 4px;
+  overflow: hidden;
+  color: #a8afb9;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-column {
+  text-align: right;
+}
+
+.status-label {
+  color: var(--status-color);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.last-seen {
+  margin-top: 5px;
+  color: #656d79;
+  font-size: 9px;
+}
+
+.empty-state,
+.error-state {
+  display: grid;
+  min-height: 280px;
+  padding: 26px;
+  place-items: center;
+  border: 1px dashed rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  color: #929aa6;
+  text-align: center;
+}
+
+.empty-state strong,
+.error-state strong {
+  display: block;
+  margin-bottom: 8px;
+  color: #e8ebef;
+  font-size: 14px;
+}
+
+.empty-state p,
+.error-state p {
+  max-width: 290px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.error-state {
+  border-color: rgba(255, 101, 116, 0.28);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .session-card[data-status="working"] .agent-icon,
+  .session-card[data-status="starting"] .agent-icon {
+    animation: pulse 1.8s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    50% {
+      box-shadow: 0 0 18px
+        color-mix(in srgb, var(--status-color), transparent 55%);
+    }
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "name": "@agent-lantern/overlay",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && vite build",
+    "dev:web": "vite --port 1420 --strictPort",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "tauri:build": "tauri build",
+    "tauri:dev": "tauri dev",
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@agent-lantern/protocol": "workspace:*",
+    "@tauri-apps/api": "^2.8.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.8.4",
+    "vite": "^7.1.3"
+  }
+}

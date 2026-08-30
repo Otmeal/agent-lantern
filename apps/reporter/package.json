@@ -1,0 +1,29 @@
+{
+  "name": "agent-status-reporter",
+  "version": "0.1.0",
+  "description": "Hook reporter for Agent Lantern",
+  "type": "module",
+  "bin": {
+    "agent-status-reporter": "./dist/index.js"
+  },
+  "main": "./dist/index.js",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "pack:distribution": "pnpm pack --pack-destination ../../dist-packages",
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@agent-lantern/integrations": "workspace:*",
+    "@agent-lantern/protocol": "workspace:*",
+    "tsup": "^8.5.0"
+  },
+  "engines": {
+    "node": ">=20.19"
+  }
+}

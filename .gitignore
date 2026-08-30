@@ -1,0 +1,17 @@
+node_modules/
+dist/
+dist-bundle/
+coverage/
+*.log
+*.tgz
+dist-packages/*
+!dist-packages/.gitkeep
+.env
+.env.*
+!.env.example
+apps/overlay/src-tauri/target/
+apps/overlay/src-tauri/gen/
+.idea/
+.vscode/
+Thumbs.db
+.DS_Store

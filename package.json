@@ -1,0 +1,30 @@
+{
+  "name": "agent-lantern",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A lightweight Windows overlay for remote AI agent status.",
+  "license": "MIT",
+  "packageManager": "pnpm@10.11.0",
+  "scripts": {
+    "build": "pnpm --recursive --sort build",
+    "build:overlay": "pnpm --filter @agent-lantern/daemon build:bundle && pnpm --filter @agent-lantern/overlay tauri:build && pnpm collect:artifacts",
+    "collect:artifacts": "node scripts/collect-artifacts.mjs",
+    "dev:daemon": "pnpm --filter @agent-lantern/daemon dev",
+    "dev:overlay": "pnpm --filter @agent-lantern/daemon build:bundle && pnpm --filter @agent-lantern/overlay tauri:dev",
+    "format:check": "prettier --check .",
+    "lint": "pnpm --recursive --sort lint",
+    "pack:all": "pnpm pack:reporter && pnpm build:overlay",
+    "pack:reporter": "pnpm --filter agent-status-reporter pack:distribution && node scripts/collect-artifacts.mjs --skip-installers",
+    "test": "pnpm --recursive --sort test",
+    "typecheck": "pnpm --recursive --sort typecheck"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "prettier": "^3.6.2",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  },
+  "engines": {
+    "node": ">=20.19"
+  }
+}
