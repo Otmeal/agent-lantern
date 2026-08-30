@@ -139,6 +139,19 @@ pnpm --filter @agent-lantern/daemon start
 
 此時 overlay 偵測到連接埠已被監聽，就不會再啟動第二份。若要完全停用自動啟動，設定環境變數 `AGENT_LANTERN_NO_AUTO_START=1`。
 
+#### 協定版本（Protocol Version）交握
+
+「連接埠已有 daemon 就沿用」的判斷不能只看有沒有東西在監聽——overlay 更新之後，舊版 daemon 若還佔著同一個連接埠，回應格式可能已經跟不上，讓 overlay 解析工作階段清單時整批失敗。因此 overlay 沿用既有 daemon 前，會先呼叫 `/health` 比對其中的協定版本（Protocol Version）：
+
+1. 版本相符：直接沿用，行為與上述一致。
+2. 版本不符、但該 daemon 回報得出自己的行程識別碼（Process Identifier，PID）：overlay 會自動終止該行程，等它讓出連接埠後再啟動隨附的新版 daemon，使用者不需要介入。
+3. 版本不符、且無法回報行程識別碼（早於這個交握機制的更舊版本）：overlay 不會冒然啟動第二份 daemon（否則會退回改用其他連接埠，讓仍在對舊 daemon 回報事件的遠端主機悄悄失聯），而是顯示明確的中文提示，說明連接埠上的 daemon 版本過舊，並附上手動關閉該行程的指令。
+4. daemon 的版本比 overlay 還新：overlay 不會終止它——那通常是刻意執行的新版建置，殺掉會連同記憶體中的工作階段一起丟失，而且兩個版本輪流啟動時會互相殘殺——改為提示應更新 overlay。
+
+自動終止只在該行程確實是 node 行程時才執行——pid 是由連接埠上那個不需驗證的 `/health` 自己回報的，這道檢查限縮了誤殺範圍。另外，設定了 `AGENT_LANTERN_DAEMON_ENDPOINT` 時 overlay 完全不管理本機 daemon，也不會終止任何行程。
+
+overlay 前端也會做同一件事：`/health` 版本不符時顯示上述提示而不是一整批結構描述（schema）錯誤，並持續重驗；使用者換上相符的 daemon 之後，overlay 會自行恢復輪詢，不必重開視窗。
+
 確認服務（請用 overlay「設定」面板顯示的實際連接埠）：
 
 ```powershell

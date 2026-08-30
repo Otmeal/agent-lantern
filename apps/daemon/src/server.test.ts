@@ -1,3 +1,4 @@
+import { protocolVersion } from "@agent-lantern/protocol";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { buildServer } from "./server.js";
@@ -24,6 +25,38 @@ async function createServer() {
 }
 
 describe("daemon API", () => {
+  it("answers /health without a bearer token and reports the protocol version handshake fields", async () => {
+    const server = await createServer();
+    const response = await server.inject({
+      method: "GET",
+      url: "/health",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      status: "ok",
+      service: "agent-lantern-daemon",
+      protocolVersion,
+      processIdentifier: process.pid,
+    });
+  });
+
+  it("withholds the process identifier from /health requests that are not loopback", async () => {
+    const server = await createServer();
+    const response = await server.inject({
+      method: "GET",
+      url: "/health",
+      remoteAddress: "100.64.1.2",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      status: "ok",
+      service: "agent-lantern-daemon",
+      protocolVersion,
+    });
+  });
+
   it("rejects requests without a token", async () => {
     const server = await createServer();
     const response = await server.inject({

@@ -2,6 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { LogicalSize } from "@tauri-apps/api/dpi";
 import {
+  healthResponseSchema,
+  protocolVersion,
   sessionsResponseSchema,
   type AgentStatus,
   type SessionSnapshot,
@@ -27,6 +29,13 @@ interface OverlayConfiguration {
 type ViewMode = "compact" | "expanded";
 
 const tailscaleAddressPlaceholder = "<Windows-Tailscale-IP>";
+/**
+ * daemon 的回應格式跟這個 overlay 認得的協定版本不符時顯示的訊息：舊版
+ * daemon 的 sessions 回應會缺少必填欄位，直接丟一整批 zod 的 invalid_type
+ * 錯誤給使用者看毫無意義，所以統一換成這句可以照著做的指示。
+ */
+const protocolMismatchMessage =
+  "daemon 回應的資料格式與這個 overlay 不相符（daemon 版本可能過舊）。請關閉 daemon 後重新開啟 Agent Lantern。";
 const viewModeStorageKey = "agent-lantern.viewMode";
 const minimumCompactWindowHeight = 96;
 const maximumCompactWindowHeight = 432;
@@ -187,6 +196,13 @@ const previousStatusBySessionKey = new Map<string, AgentStatus>();
  * completed 工作階段轟一輪。
  */
 let hasSeededPreviousStatuses = false;
+/**
+ * daemon 的協定版本是否已經驗過。重新取得設定、或發現版本不符時會退回 false，
+ * 之後每輪輪詢都重驗，直到 daemon 換成相符的版本為止。
+ */
+let daemonProtocolVerified = false;
+/** 上一輪輪詢是否還沒結束；用來擋掉重疊的輪詢。 */
+let isPollInFlight = false;
 let lastAppliedCompactWindowHeight: number | null = null;
 let isResizingCompactWindow = false;
 
@@ -387,15 +403,100 @@ function renderCompletionSoundRow(): void {
 
 async function initialize(): Promise<void> {
   renderCompletionSoundRow();
+  await pollDaemon();
+  // 不論這一輪結果如何都掛上輪詢：取得設定失敗、或版本不符時，使用者照指示
+  // 換掉 daemon 之後 overlay 會自己接回去，不必重開視窗。
+  window.setInterval(() => void pollDaemon(), 2_000);
+}
+
+/**
+ * 向 Rust 端要 daemon 的 endpoint 與 token。這個呼叫最久會等 daemon 啟動 20
+ * 秒，失敗時（例如連接埠上卡著一個關不掉的舊 daemon）由下一輪輪詢重試——
+ * Rust 端每次呼叫都會重新探測，所以問題排除後就會自己接上。
+ */
+async function connectToDaemon(): Promise<boolean> {
   try {
     overlayConfiguration = await invoke<OverlayConfiguration>(
       "get_overlay_configuration",
     );
     renderSetupPanel();
-    await refreshSessions();
-    window.setInterval(() => void refreshSessions(), 2_000);
+    daemonProtocolVerified = false;
+    return true;
   } catch (error: unknown) {
     renderError(error);
+    return false;
+  }
+}
+
+/**
+ * 一次輪詢。版本不符時不去打 sessions（回應必定解析失敗），改成每輪重驗一次
+ * `/health` 並重繪提示；等使用者換上相符的 daemon 就自動恢復。
+ */
+async function pollDaemon(): Promise<void> {
+  // 單輪可能耗上數秒（取得設定、逾時的 fetch），沒有這道閘門會有多輪重疊，
+  // 請求量加倍且渲染順序可能顛倒。
+  if (isPollInFlight) {
+    return;
+  }
+  isPollInFlight = true;
+
+  try {
+    if (!overlayConfiguration && !(await connectToDaemon())) {
+      return;
+    }
+
+    // 版本驗過一次就不必每輪再問 `/health`；反之只要還沒驗過（剛連上、或剛
+    // 被判定不符），就每輪重驗並重繪提示——手動重新整理或刪除失敗提示會蓋掉
+    // 錯誤畫面，不重繪的話使用者會看到一份不再更新、卻沒有任何提示的清單。
+    if (!daemonProtocolVerified) {
+      if (await isDaemonProtocolIncompatible()) {
+        reportProtocolMismatch();
+        return;
+      }
+      daemonProtocolVerified = true;
+    }
+
+    await refreshSessions();
+  } finally {
+    isPollInFlight = false;
+  }
+}
+
+function reportProtocolMismatch(): void {
+  daemonProtocolVerified = false;
+  renderError(new Error(protocolMismatchMessage));
+}
+
+/**
+ * 確認 daemon 講的協定版本跟這個 overlay 相符。舊到沒有交握欄位的 daemon 只會
+ * 回 `status` 與 `service`，那正是最該擋下來的情況，所以「缺 `protocolVersion`」
+ * 與「版本不同」一律視為不相容。反之，連不上、逾時、或回應根本不是 JSON 都不
+ * 在這裡判死——那是 daemon 沒起來，既有的錯誤處理已經涵蓋。
+ */
+async function isDaemonProtocolIncompatible(): Promise<boolean> {
+  if (!overlayConfiguration) {
+    return false;
+  }
+
+  try {
+    const response = await fetch(
+      `${overlayConfiguration.daemonEndpoint}/health`,
+      { signal: AbortSignal.timeout(2_500) },
+    );
+    if (!response.ok) {
+      return false;
+    }
+
+    const parsedHealthResponse = healthResponseSchema.safeParse(
+      await response.json(),
+    );
+    if (!parsedHealthResponse.success) {
+      return false;
+    }
+
+    return parsedHealthResponse.data.protocolVersion !== protocolVersion;
+  } catch {
+    return false;
   }
 }
 
@@ -462,10 +563,21 @@ async function refreshSessions(): Promise<void> {
       throw new Error(`Daemon 回應 ${response.status}`);
     }
 
-    const sessionsResponse = sessionsResponseSchema.parse(
+    const parsedSessionsResponse = sessionsResponseSchema.safeParse(
       await response.json(),
     );
-    latestSessions = sessionsResponse.sessions;
+    if (!parsedSessionsResponse.success) {
+      // 不把原始的 zod issues 丟給使用者看，但留在 console 方便排查是哪個
+      // 欄位對不上（通常代表 daemon 版本過舊，回應裡缺了新加的必填欄位）。
+      console.error(
+        "sessionsResponseSchema 解析失敗：",
+        parsedSessionsResponse.error.issues,
+      );
+      reportProtocolMismatch();
+      return;
+    }
+
+    latestSessions = parsedSessionsResponse.data.sessions;
     pruneDeletedSessionMarkers();
     renderSessions();
   } catch (error: unknown) {
