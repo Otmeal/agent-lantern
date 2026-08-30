@@ -7,6 +7,7 @@ Agent Lantern 是一個在 Windows 主機上顯示的輕量浮動覆蓋視窗（
 - 具 Bearer token 驗證的超文字傳輸協定（Hypertext Transfer Protocol，HTTP）daemon。
 - 可置頂、可拖曳、無系統邊框的 Tauri 2 Windows 視窗。
 - 依 host、workspace、session 分組顯示 Codex 與 Claude 狀態。
+- 代理程式進入「已完成」時響一聲提示音（可在「設定」面板開關與試聽）。
 - 可安裝於 Linux、WSL 與遠端主機的 `agent-status-reporter` 命令列介面（Command-Line Interface，CLI）。
 - 會把 hook 合併寫入既有 Codex / Claude Code 設定的安裝器（`agent-status-reporter install`）與遠端一鍵安裝腳本。
 - 共用、版本化的 normalized event schema，以及隔離的 agent integration mapping。
@@ -91,7 +92,7 @@ pnpm build
 %APPDATA%\agent-lantern\config.json
 ```
 
-之後每次啟動 daemon 或 overlay 都會沿用同一份設定，不會重新產生。overlay 會讀取同一份檔案；開啟 overlay 視窗後按下右上角的「設定」按鈕，就能看到 daemon endpoint 與 token，以及一行就能在遠端主機執行完畢的安裝指令，按「複製」貼過去執行即可（見下方第 3 節）。overlay 本身仍固定經由本機 `127.0.0.1` 連線 daemon，沒有必要連到外部位址。
+之後每次啟動 daemon 或 overlay 都會沿用同一份設定，不會重新產生。overlay 會讀取同一份檔案；開啟 overlay 視窗後按下右上角的「設定」按鈕，就能看到 daemon endpoint 與 token，以及一行就能在遠端主機執行完畢的安裝指令，按「複製」貼過去執行即可（見下方第 3 節）。overlay 本身仍固定經由本機 `127.0.0.1` 連線 daemon，沒有必要連到外部位址。同一個面板還有「完成提示音」一列，可以開關提示音並試聽；選擇存在 overlay 的 localStorage，跨啟動保留。
 
 > 進階／覆寫：如果你想手動指定 token（例如多台 Windows 主機共用同一組 token，或在 CI 中執行），設定 `AGENT_LANTERN_TOKEN`（至少 20 個字元）、`AGENT_LANTERN_BIND_ADDRESS`、`AGENT_LANTERN_PORT` 這幾個使用者環境變數即可覆蓋自動產生的設定：
 >

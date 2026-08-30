@@ -3,9 +3,16 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { LogicalSize } from "@tauri-apps/api/dpi";
 import {
   sessionsResponseSchema,
+  type AgentStatus,
   type SessionSnapshot,
 } from "@agent-lantern/protocol";
 
+import {
+  isCompletionSoundEnabled,
+  playCompletionChime,
+  primeAudioPlayback,
+  setCompletionSoundEnabled,
+} from "./notification-sound";
 import "./styles.css";
 
 interface OverlayConfiguration {
@@ -89,6 +96,14 @@ applicationElement.innerHTML = `
           </div>
         </div>
         <div class="setup-row">
+          <span class="setup-label">完成提示音</span>
+          <div class="setup-value-row">
+            <code class="setup-value" id="completion-sound-state">–</code>
+            <button class="copy-button" id="toggle-completion-sound">–</button>
+            <button class="copy-button" id="preview-completion-sound">試聽</button>
+          </div>
+        </div>
+        <div class="setup-row">
           <span class="setup-label">遠端安裝指令</span>
           <div class="setup-value-row">
             <code class="setup-value setup-value-command" id="setup-install-command">–</code>
@@ -144,6 +159,12 @@ const toggleViewModeCompactButton = document.querySelector<HTMLButtonElement>(
 )!;
 const toggleTokenButton =
   document.querySelector<HTMLButtonElement>("#toggle-token")!;
+const completionSoundStateElement = document.querySelector<HTMLElement>(
+  "#completion-sound-state",
+)!;
+const toggleCompletionSoundButton = document.querySelector<HTMLButtonElement>(
+  "#toggle-completion-sound",
+)!;
 let overlayConfiguration: OverlayConfiguration | undefined;
 let isTokenRevealed = false;
 let viewMode: ViewMode = loadViewMode();
@@ -156,6 +177,16 @@ let latestSessions: SessionSnapshot[] = [];
  * 顯示回來——不能只用一個布林值卡住，否則會把「刻意重建」的 session 也擋掉。
  */
 const deletedSessionReceivedAt = new Map<string, string>();
+/**
+ * sessionKey → 上一輪輪詢看到的狀態。用來辨認「剛進入 completed」這個轉換；
+ * 只看當下狀態的話，同一個已完成的工作階段會每兩秒響一次。
+ */
+const previousStatusBySessionKey = new Map<string, AgentStatus>();
+/**
+ * 第一次拿到工作階段清單時只建表、不響鈴。否則每次開啟 Overlay 都會被既有的
+ * completed 工作階段轟一輪。
+ */
+let hasSeededPreviousStatuses = false;
 let lastAppliedCompactWindowHeight: number | null = null;
 let isResizingCompactWindow = false;
 
@@ -188,6 +219,23 @@ toggleTokenButton.addEventListener("click", () => {
   isTokenRevealed = !isTokenRevealed;
   renderSetupPanel();
 });
+toggleCompletionSoundButton.addEventListener("click", () => {
+  const nextEnabled = !isCompletionSoundEnabled();
+  setCompletionSoundEnabled(nextEnabled);
+  renderCompletionSoundRow();
+  if (nextEnabled) {
+    // 開啟的當下響一聲，讓使用者立刻知道音量與音色。
+    playCompletionChime();
+  }
+});
+document
+  .querySelector("#preview-completion-sound")
+  // 關閉狀態下也要聽得到，所以用 force。
+  ?.addEventListener("click", () => playCompletionChime({ force: true }));
+// 自動播放政策會讓 AudioContext 一開始處於 suspended；真正要響的那一刻是輪詢
+// 觸發的、不算使用者手勢，所以在第一次互動時先解鎖。
+document.addEventListener("pointerdown", primeAudioPlayback, { once: true });
+document.addEventListener("keydown", primeAudioPlayback, { once: true });
 document
   .querySelector("#copy-endpoint")
   ?.addEventListener(
@@ -331,7 +379,14 @@ function buildInstallCommand(options: {
   return `sh install-remote.sh --endpoint ${endpoint} --token ${token}`;
 }
 
+function renderCompletionSoundRow(): void {
+  const enabled = isCompletionSoundEnabled();
+  completionSoundStateElement.textContent = enabled ? "開啟" : "關閉";
+  toggleCompletionSoundButton.textContent = enabled ? "關閉" : "開啟";
+}
+
 async function initialize(): Promise<void> {
+  renderCompletionSoundRow();
   try {
     overlayConfiguration = await invoke<OverlayConfiguration>(
       "get_overlay_configuration",
@@ -492,6 +547,8 @@ function renderSessions(): void {
       session.receivedAt > deletedSessionSnapshotReceivedAt
     );
   });
+  notifyCompletedTransitions(visibleSessions);
+
   const summaryText = `${visibleSessions.length} 個工作階段`;
   summaryCopyElement.textContent = summaryText;
   compactSummaryCopyElement.textContent = summaryText;
@@ -517,6 +574,52 @@ function renderSessions(): void {
       ? renderCompactSessionList(visibleSessions)
       : renderExpandedSessionList(visibleSessions);
   void maybeResizeCompactWindow();
+}
+
+/**
+ * 比對上一輪與這一輪的狀態，只要有工作階段是「剛進入 completed」就響一聲。
+ *
+ * 幾個刻意的取捨：
+ * - 表以 latestSessions（daemon 的真實清單）為準記錄狀態，但只有「使用者看得到」
+ *   的工作階段才會觸發響鈴。被本機刪除標記藏起來的那筆仍然會更新狀態，所以
+ *   DELETE 失敗、標記被清掉而它重新出現時，不會因為表裡沒有紀錄而誤響。
+ * - 同一輪有多筆同時完成也只響一次；三個代理程式一起跑完不該連放三聲。
+ * - daemon 端真的移除掉的 sessionKey 要從表裡清掉，否則這個 Map 會無限長大。
+ */
+function notifyCompletedTransitions(visibleSessions: SessionSnapshot[]): void {
+  const visibleSessionKeys = new Set(
+    visibleSessions.map((session) => session.sessionKey),
+  );
+  const liveSessionKeys = new Set<string>();
+  let hasNewCompletion = false;
+
+  for (const session of latestSessions) {
+    liveSessionKeys.add(session.sessionKey);
+    const previousStatus = previousStatusBySessionKey.get(session.sessionKey);
+    previousStatusBySessionKey.set(session.sessionKey, session.status);
+    if (
+      session.status === "completed" &&
+      previousStatus !== "completed" &&
+      visibleSessionKeys.has(session.sessionKey)
+    ) {
+      hasNewCompletion = true;
+    }
+  }
+
+  for (const sessionKey of previousStatusBySessionKey.keys()) {
+    if (!liveSessionKeys.has(sessionKey)) {
+      previousStatusBySessionKey.delete(sessionKey);
+    }
+  }
+
+  if (!hasSeededPreviousStatuses) {
+    hasSeededPreviousStatuses = true;
+    return;
+  }
+
+  if (hasNewCompletion) {
+    playCompletionChime();
+  }
 }
 
 function renderCompactSessionList(sessions: SessionSnapshot[]): string {
