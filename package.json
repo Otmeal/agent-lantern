@@ -14,7 +14,7 @@
     "format:check": "prettier --check .",
     "lint": "pnpm --recursive --sort lint",
     "pack:all": "pnpm pack:reporter && pnpm build:overlay",
-    "pack:reporter": "pnpm --filter agent-status-reporter pack:distribution && node scripts/collect-artifacts.mjs --skip-installers",
+    "pack:reporter": "pnpm build && pnpm --filter agent-status-reporter pack:distribution && node scripts/collect-artifacts.mjs --skip-installers",
     "test": "pnpm --recursive --sort test",
     "typecheck": "pnpm --recursive --sort typecheck"
   },
