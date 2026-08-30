@@ -36,6 +36,7 @@ export const normalizedAgentEventSchema = z.object({
 });
 
 export const sessionSnapshotSchema = z.object({
+  sessionKey: z.string().min(1),
   agent: normalizedAgentEventSchema.shape.agent,
   host: normalizedAgentEventSchema.shape.host,
   workspace: normalizedAgentEventSchema.shape.workspace,

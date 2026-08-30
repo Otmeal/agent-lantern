@@ -22,7 +22,7 @@ export async function buildServer({
 
   await server.register(cors, {
     origin: configuration.allowedOrigins,
-    methods: ["GET", "POST"],
+    methods: ["GET", "POST", "DELETE"],
     allowedHeaders: ["Authorization", "Content-Type"],
   });
 
@@ -63,6 +63,16 @@ export async function buildServer({
     generatedAt: new Date().toISOString(),
     sessions: sessionStore.list(),
   }));
+
+  server.delete("/api/v1/sessions/:sessionKey", async (request, reply) => {
+    const { sessionKey } = request.params as { sessionKey: string };
+    const removed = sessionStore.remove(sessionKey);
+    if (!removed) {
+      return reply.code(404).send({ error: "Session not found" });
+    }
+
+    return reply.code(204).send();
+  });
 
   return server;
 }

@@ -70,4 +70,197 @@ describe("daemon API", () => {
       },
     ]);
   });
+
+  it("includes a non-empty sessionKey on each session snapshot", async () => {
+    const server = await createServer();
+    const event = {
+      schemaVersion: 1,
+      eventIdentifier: "event-session-key",
+      occurredAt: "2026-08-30T12:00:00.000Z",
+      eventType: "codex.Stop",
+      status: "completed",
+      agent: { kind: "codex", displayName: "Codex" },
+      host: { name: "remote-host" },
+      workspace: { path: "/srv/application", name: "application" },
+      session: { identifier: "session-key-check" },
+    };
+
+    await server.inject({
+      method: "POST",
+      url: "/api/v1/events",
+      headers: { authorization: `Bearer ${token}` },
+      payload: event,
+    });
+    const sessionsResponse = await server.inject({
+      method: "GET",
+      url: "/api/v1/sessions",
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    const sessions = sessionsResponse.json().sessions as Array<{
+      sessionKey: string;
+    }>;
+    expect(sessions).toHaveLength(1);
+    expect(typeof sessions[0]?.sessionKey).toBe("string");
+    expect(sessions[0]?.sessionKey.length).toBeGreaterThan(0);
+  });
+
+  it("deletes a session by its sessionKey and removes it from a subsequent GET", async () => {
+    const server = await createServer();
+    const event = {
+      schemaVersion: 1,
+      eventIdentifier: "event-delete-1",
+      occurredAt: "2026-08-30T12:00:00.000Z",
+      eventType: "codex.Stop",
+      status: "completed",
+      agent: { kind: "codex", displayName: "Codex" },
+      host: { name: "remote-host" },
+      workspace: { path: "/srv/application", name: "application" },
+      session: { identifier: "session-delete" },
+    };
+
+    await server.inject({
+      method: "POST",
+      url: "/api/v1/events",
+      headers: { authorization: `Bearer ${token}` },
+      payload: event,
+    });
+    const beforeDelete = await server.inject({
+      method: "GET",
+      url: "/api/v1/sessions",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const sessionKey = beforeDelete.json().sessions[0].sessionKey as string;
+
+    const deleteResponse = await server.inject({
+      method: "DELETE",
+      url: `/api/v1/sessions/${sessionKey}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const afterDelete = await server.inject({
+      method: "GET",
+      url: "/api/v1/sessions",
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    expect(deleteResponse.statusCode).toBe(204);
+    expect(afterDelete.json().sessions).toHaveLength(0);
+  });
+
+  it("returns 404 when deleting an unknown or garbage sessionKey", async () => {
+    const server = await createServer();
+    const deleteResponse = await server.inject({
+      method: "DELETE",
+      url: "/api/v1/sessions/not-a-real-key",
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    expect(deleteResponse.statusCode).toBe(404);
+    expect(deleteResponse.json()).toEqual({ error: "Session not found" });
+  });
+
+  it("rejects a non-canonical variant of a real sessionKey and leaves the session in place", async () => {
+    const server = await createServer();
+    const event = {
+      schemaVersion: 1,
+      eventIdentifier: "event-delete-noncanonical",
+      occurredAt: "2026-08-30T12:00:00.000Z",
+      eventType: "codex.Stop",
+      status: "completed",
+      agent: { kind: "codex", displayName: "Codex" },
+      host: { name: "remote-host" },
+      workspace: { path: "/srv/application", name: "application" },
+      session: { identifier: "session-noncanonical" },
+    };
+
+    await server.inject({
+      method: "POST",
+      url: "/api/v1/events",
+      headers: { authorization: `Bearer ${token}` },
+      payload: event,
+    });
+    const beforeDelete = await server.inject({
+      method: "GET",
+      url: "/api/v1/sessions",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const sessionKey = beforeDelete.json().sessions[0].sessionKey as string;
+
+    const deleteResponse = await server.inject({
+      method: "DELETE",
+      url: `/api/v1/sessions/${sessionKey}=`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const afterDelete = await server.inject({
+      method: "GET",
+      url: "/api/v1/sessions",
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    expect(deleteResponse.statusCode).toBe(404);
+    expect(afterDelete.json().sessions).toHaveLength(1);
+  });
+
+  it("rejects DELETE requests without a bearer token", async () => {
+    const server = await createServer();
+    const deleteResponse = await server.inject({
+      method: "DELETE",
+      url: "/api/v1/sessions/whatever",
+    });
+
+    expect(deleteResponse.statusCode).toBe(401);
+  });
+
+  it("recreates a session on a fresh event after deletion", async () => {
+    const server = await createServer();
+    const baseEvent = {
+      schemaVersion: 1,
+      eventIdentifier: "event-recreate-1",
+      occurredAt: "2026-08-30T12:00:00.000Z",
+      eventType: "codex.Stop",
+      status: "completed",
+      agent: { kind: "codex", displayName: "Codex" },
+      host: { name: "remote-host" },
+      workspace: { path: "/srv/application", name: "application" },
+      session: { identifier: "session-recreate" },
+    };
+
+    await server.inject({
+      method: "POST",
+      url: "/api/v1/events",
+      headers: { authorization: `Bearer ${token}` },
+      payload: baseEvent,
+    });
+    const beforeDelete = await server.inject({
+      method: "GET",
+      url: "/api/v1/sessions",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const sessionKey = beforeDelete.json().sessions[0].sessionKey as string;
+
+    await server.inject({
+      method: "DELETE",
+      url: `/api/v1/sessions/${sessionKey}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    await server.inject({
+      method: "POST",
+      url: "/api/v1/events",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { ...baseEvent, eventIdentifier: "event-recreate-2" },
+    });
+    const afterRepost = await server.inject({
+      method: "GET",
+      url: "/api/v1/sessions",
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    expect(afterRepost.json().sessions).toMatchObject([
+      {
+        session: { identifier: "session-recreate" },
+        status: "completed",
+      },
+    ]);
+  });
 });

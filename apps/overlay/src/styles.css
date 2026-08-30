@@ -50,6 +50,74 @@ button {
   user-select: none;
 }
 
+.compact-strip {
+  display: none;
+  align-items: center;
+  width: 100%;
+  gap: 6px;
+}
+
+.lantern-dot {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #ffb640;
+  box-shadow: 0 0 6px #ffae2c;
+}
+
+.compact-summary {
+  overflow: hidden;
+  flex: 1;
+  min-width: 0;
+  color: #aeb4be;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compact-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 2px;
+}
+
+/* 精簡模式下：整個視窗長得像一條 22px 的拖曳條，讓品牌區塊與視窗按鈕讓位。 */
+html[data-view-mode="compact"] body,
+html[data-view-mode="compact"] #application {
+  height: auto;
+}
+
+html[data-view-mode="compact"] .lantern-shell {
+  height: auto;
+  max-height: 420px;
+}
+
+html[data-view-mode="compact"] .title-bar {
+  min-height: 22px;
+  padding: 0 6px;
+}
+
+html[data-view-mode="compact"] .compact-strip {
+  display: flex;
+}
+
+html[data-view-mode="compact"] .brand-mark,
+html[data-view-mode="compact"] .brand-copy,
+html[data-view-mode="compact"] .window-actions,
+html[data-view-mode="compact"] .summary {
+  display: none;
+}
+
+html[data-view-mode="expanded"] .compact-strip {
+  display: none;
+}
+
+html[data-view-mode="compact"] .content {
+  padding: 4px 6px;
+}
+
 .brand-mark {
   position: relative;
   width: 34px;
@@ -173,6 +241,37 @@ button {
 .text-button:hover {
   color: #ffffff;
   background: rgba(255, 255, 255, 0.09);
+}
+
+.view-toggle-button {
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  color: #c9ced6;
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 11px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.view-toggle-button:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.text-button.compact-setup-button,
+.view-toggle-button.compact-view-toggle-button {
+  height: 16px;
+  padding: 0 6px;
+  font-size: 9px;
+}
+
+.refresh-button.compact-refresh-button,
+.window-button.compact-window-button {
+  width: 18px;
+  height: 18px;
+  font-size: 11px;
 }
 
 .setup-panel {
@@ -313,6 +412,31 @@ button {
   content: "";
 }
 
+.delete-session-button {
+  display: grid;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  color: #7d8492;
+  background: transparent;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.delete-session-button:hover {
+  color: #ff6574;
+  background: rgba(255, 101, 116, 0.12);
+}
+
+.card-delete-button {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+}
+
 .agent-icon {
   display: grid;
   width: 37px;
@@ -374,6 +498,88 @@ button {
   margin-top: 5px;
   color: #656d79;
   font-size: 9px;
+}
+
+.session-row-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.session-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 6px;
+  overflow: hidden;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  gap: 6px;
+}
+
+.session-row:last-child {
+  border-bottom: none;
+}
+
+.row-status-dot {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--status-color);
+  box-shadow: 0 0 6px var(--status-color);
+}
+
+.row-agent-initial {
+  flex-shrink: 0;
+  color: var(--status-color);
+  font-size: 9px;
+  font-weight: 750;
+}
+
+.row-workspace {
+  overflow: hidden;
+  flex: 1;
+  min-width: 0;
+  color: #d7dae0;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row-session-id {
+  flex-shrink: 0;
+  color: #69717e;
+  font-family: "Cascadia Code", monospace;
+  font-size: 9px;
+}
+
+.row-status-label {
+  flex-shrink: 0;
+  color: var(--status-color);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.row-last-seen {
+  flex-shrink: 0;
+  color: #656d79;
+  font-size: 9px;
+}
+
+.compact-empty-state,
+.compact-error-state {
+  overflow: hidden;
+  height: 26px;
+  padding: 0 6px;
+  color: #929aa6;
+  font-size: 11px;
+  line-height: 26px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compact-error-state {
+  color: #ff8a95;
 }
 
 .empty-state,

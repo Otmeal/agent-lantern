@@ -378,6 +378,10 @@ pnpm format:check
 
 需要 `Authorization: Bearer <token>`。回傳每個 `host + workspace + agent + session` 的最新 snapshot。
 
+### `DELETE /api/v1/sessions/:sessionKey`
+
+需要 `Authorization: Bearer <token>`，與其他端點相同。成功移除回傳 `204`（無內容）；`sessionKey` 不存在（或不是正典編碼）時回傳 `404 { "error": "Session not found" }`。刪除不會留下 tombstone，之後若同一個 session 再收到新事件，會照常重建並出現在 `GET /api/v1/sessions` 裡。
+
 ## MVP 限制與後續方向
 
 - daemon 狀態目前存放在記憶體，重新啟動後會清空；下一階段可在 daemon infrastructure layer 加入 SQLite adapter，不需更動 integrations 或 overlay。

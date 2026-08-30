@@ -7,10 +7,10 @@
   "packageManager": "pnpm@10.11.0",
   "scripts": {
     "build": "pnpm --recursive --sort build",
-    "build:overlay": "pnpm --filter @agent-lantern/daemon build:bundle && pnpm --filter @agent-lantern/overlay tauri:build && pnpm collect:artifacts",
+    "build:overlay": "pnpm --filter @agent-lantern/protocol build && pnpm --filter @agent-lantern/daemon build:bundle && pnpm --filter @agent-lantern/overlay tauri:build && pnpm collect:artifacts",
     "collect:artifacts": "node scripts/collect-artifacts.mjs",
     "dev:daemon": "pnpm --filter @agent-lantern/daemon dev",
-    "dev:overlay": "pnpm --filter @agent-lantern/daemon build:bundle && pnpm --filter @agent-lantern/overlay tauri:dev",
+    "dev:overlay": "pnpm --filter @agent-lantern/protocol build && pnpm --filter @agent-lantern/daemon build:bundle && pnpm --filter @agent-lantern/overlay tauri:dev",
     "format:check": "prettier --check .",
     "lint": "pnpm --recursive --sort lint",
     "pack:all": "pnpm pack:reporter && pnpm build:overlay",
