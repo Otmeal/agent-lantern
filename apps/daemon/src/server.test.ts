@@ -138,6 +138,84 @@ describe("daemon API", () => {
     expect(sessions[0]?.sessionKey.length).toBeGreaterThan(0);
   });
 
+  it("deletes a session whose workspace path pushes its sessionKey past the default parameter length", async () => {
+    const server = await createServer();
+    // A real Windows workspace path is long enough on its own; find-my-way
+    // would reject the resulting sessionKey with 414 before routing it.
+    const workspacePath =
+      "/home/developer/projects/organisation/platform/services/session-orchestrator/packages/daemon";
+    const event = {
+      schemaVersion: 1,
+      eventIdentifier: "event-long-key",
+      occurredAt: "2026-08-30T12:00:00.000Z",
+      eventType: "claude.Stop",
+      status: "completed",
+      agent: { kind: "claude", displayName: "Claude" },
+      host: { name: "workstation-with-a-long-name" },
+      workspace: { path: workspacePath, name: "daemon" },
+      session: { identifier: "b171f019-0153-41cd-8e81-ddf7506c47a5" },
+    };
+
+    await server.inject({
+      method: "POST",
+      url: "/api/v1/events",
+      headers: { authorization: `Bearer ${token}` },
+      payload: event,
+    });
+    const sessionsResponse = await server.inject({
+      method: "GET",
+      url: "/api/v1/sessions",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const sessionKey = (
+      sessionsResponse.json().sessions as Array<{ sessionKey: string }>
+    )[0]?.sessionKey;
+    expect(sessionKey?.length).toBeGreaterThan(100);
+
+    const deleteResponse = await server.inject({
+      method: "DELETE",
+      url: `/api/v1/sessions/${encodeURIComponent(sessionKey ?? "")}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    expect(deleteResponse.statusCode).toBe(204);
+  });
+
+  it("keeps the CORS origin header on a routing-level rejection so the overlay sees the status rather than a network error", async () => {
+    const server = await createServer();
+    const overlongSessionKey = "a".repeat(4096);
+
+    const response = await server.inject({
+      method: "DELETE",
+      url: `/api/v1/sessions/${overlongSessionKey}`,
+      headers: {
+        authorization: `Bearer ${token}`,
+        origin: "http://localhost:1420",
+      },
+    });
+
+    expect(response.statusCode).toBe(414);
+    expect(response.headers["access-control-allow-origin"]).toBe(
+      "http://localhost:1420",
+    );
+  });
+
+  it("withholds the CORS origin header from a routing-level rejection for a disallowed origin", async () => {
+    const server = await createServer();
+
+    const response = await server.inject({
+      method: "DELETE",
+      url: `/api/v1/sessions/${"a".repeat(4096)}`,
+      headers: {
+        authorization: `Bearer ${token}`,
+        origin: "http://attacker.example",
+      },
+    });
+
+    expect(response.statusCode).toBe(414);
+    expect(response.headers["access-control-allow-origin"]).toBeUndefined();
+  });
+
   it("deletes a session by its sessionKey and removes it from a subsequent GET", async () => {
     const server = await createServer();
     const event = {

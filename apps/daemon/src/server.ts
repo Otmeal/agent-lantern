@@ -3,7 +3,12 @@ import {
   protocolVersion,
 } from "@agent-lantern/protocol";
 import cors from "@fastify/cors";
-import Fastify, { type FastifyInstance } from "fastify";
+import Fastify, {
+  type FastifyError,
+  type FastifyInstance,
+  type FastifyReply,
+  type FastifyRequest,
+} from "fastify";
 
 import { hasValidBearerToken } from "./authentication.js";
 import type { DaemonConfiguration } from "./configuration.js";
@@ -22,6 +27,30 @@ function isLoopbackAddress(address: string | undefined): boolean {
   return normalized === "::1" || normalized.startsWith("127.");
 }
 
+/**
+ * Routing-level rejections (an over-long path parameter, an unparseable URL)
+ * are answered before the hook chain runs, so `@fastify/cors` never gets to
+ * add its headers. A browser then discards the response and the overlay only
+ * sees `TypeError: Failed to fetch`, with the real status hidden. Re-adding
+ * the origin header here keeps those failures legible to the overlay.
+ */
+function sendFrameworkError(
+  error: FastifyError,
+  request: FastifyRequest,
+  reply: FastifyReply,
+  allowedOrigins: string[],
+): void {
+  const requestOrigin = request.headers.origin;
+  if (requestOrigin !== undefined && allowedOrigins.includes(requestOrigin)) {
+    void reply.header("access-control-allow-origin", requestOrigin);
+    void reply.header("vary", "Origin");
+  }
+
+  void reply
+    .code(error.statusCode ?? 500)
+    .send({ error: error.message, code: error.code });
+}
+
 export interface ServerDependencies {
   configuration: DaemonConfiguration;
   sessionStore?: SessionStore;
@@ -34,6 +63,24 @@ export async function buildServer({
   const server = Fastify({
     logger: true,
     bodyLimit: 64 * 1024,
+    // A sessionKey is the base64url of `[host, workspacePath, agentKind,
+    // sessionId]`, so its length follows the workspace path. find-my-way
+    // defaults to 100 characters, which a perfectly ordinary path already
+    // exceeds, and the resulting 414 is routed before the CORS hook can run
+    // (see `frameworkErrors` below).
+    routerOptions: { maxParamLength: 2048 },
+    // Routing-level rejections never reach the `onRequest` hook that
+    // `@fastify/cors` installs, so without this their responses carry no
+    // `Access-Control-Allow-Origin` and the overlay sees an opaque
+    // `TypeError: Failed to fetch` instead of the status the daemon sent.
+    frameworkErrors: (error, request, reply) => {
+      sendFrameworkError(
+        error,
+        request as unknown as FastifyRequest,
+        reply as unknown as FastifyReply,
+        configuration.allowedOrigins,
+      );
+    },
   });
 
   await server.register(cors, {
