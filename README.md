@@ -243,9 +243,11 @@ sh install-remote.sh ... --skip-install   # reporter 已安裝，只重寫設定
 
 - 設定檔中其他欄位（Claude Code 的 `model`、`permissions`、`env`，Codex 的 `description` 等）原樣保留。
 - 同一個事件下使用者自己的 hook 一律保留；matcher 相同時只把 reporter 的 hook 追加到同一組，matcher 不同時另外追加一組。
-- `environment` 檔中的註解、順序與其他變數都保留，只更新 `AGENT_LANTERN_*` 三個鍵。
+- `environment` 檔中的註解、順序與其他變數都保留，只更新 Agent Lantern 自己的鍵（含編號的目的地鍵）。
 - 每次實際寫入前都會產生 `<原檔名>.agent-lantern-backup-<時間戳>` 備份。
 - 重複執行不會產生重複項目；reporter 安裝路徑改變時會就地更新既有項目。
+- `install` 預設是「新增或更新」：`--endpoint` 已存在就更新它的 token，不存在就追加成新的目的地；加上 `--replace` 才會先清空既有目的地再寫入這次指定的。`--replace` 一定要搭配至少一個 `--endpoint`，只給 `--replace --host-name` 或 `--replace --token` 而不給 `--endpoint` 會直接報錯，不會誤刪既有的其他目的地。
+- 一台 reporter 可以同時把事件送到多台 daemon：第一組目的地沿用 `AGENT_LANTERN_DAEMON_ENDPOINT` 與 `AGENT_LANTERN_TOKEN`（不帶後綴），第二組起改用 `AGENT_LANTERN_DAEMON_ENDPOINT_2` / `AGENT_LANTERN_TOKEN_2`、第三組 `_3`，以此類推；`AGENT_LANTERN_TOKEN_<N>` 缺漏時會退回沒有後綴的 `AGENT_LANTERN_TOKEN`。這個退回只適用於設定檔裡已經存在的 endpoint：對一個全新的 `--endpoint` 沒給 `--token` 時會直接報錯，避免把既有 daemon 的 token 誤送到別台主機。
 
 判斷依據是 hook 的 `command` 是否指向 `agent-status-reporter`，因此只有 Agent Lantern 自己加的東西會被動到。
 
@@ -271,6 +273,22 @@ agent-status-reporter install \
 ```
 
 `--scope project --project-directory <path>` 可改成只寫入某個專案的 `.claude/settings.json` 與 `.codex/hooks.json`。
+
+`--endpoint`／`--token` 都可以重複指定，一次把事件同時送到多台 daemon（兩者數量相同時逐一對應）：
+
+```bash
+agent-status-reporter install \
+  --endpoint http://100.80.10.15:48123 --token <daemon-1-token> \
+  --endpoint http://100.80.10.20:48123 --token <daemon-2-token> \
+  --command-path "$(command -v agent-status-reporter)"
+```
+
+如果多台 daemon 的 token 不同、不想一次全部寫在同一行命令，也可以分兩次執行累加（預設是新增或更新，不會清掉上一次寫入的目的地）：
+
+```bash
+agent-status-reporter install --endpoint http://100.80.10.15:48123 --token <daemon-1-token>
+agent-status-reporter install --endpoint http://100.80.10.20:48123 --token <daemon-2-token>
+```
 
 ### 手動驗證
 
