@@ -392,7 +392,7 @@ function buildInstallCommand(options: {
     ? overlayConfiguration.token
     : "•".repeat(24);
 
-  return `sh install-remote.sh --endpoint ${endpoint} --token ${token}`;
+  return `sh install-remote.sh --endpoint '${endpoint}' --token '${token}'`;
 }
 
 function renderCompletionSoundRow(): void {
