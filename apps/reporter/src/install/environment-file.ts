@@ -15,9 +15,11 @@ export interface EnvironmentMergeResult {
   changes: EnvironmentChange[];
 }
 
-const assignmentPattern = /^(\s*)([A-Za-z_][A-Za-z0-9_]*)(\s*)=(.*)$/;
+// index.ts 需要用同一套規則掃描既有檔案內容（例如認出所有目的地鍵），因此匯出
+// 供重用，避免另外維護一份平行的解析邏輯。
+export const assignmentPattern = /^(\s*)([A-Za-z_][A-Za-z0-9_]*)(\s*)=(.*)$/;
 
-function stripMatchingQuotes(value: string): string {
+export function stripMatchingQuotes(value: string): string {
   const trimmed = value.trim();
   const firstCharacter = trimmed[0];
   const lastCharacter = trimmed.at(-1);

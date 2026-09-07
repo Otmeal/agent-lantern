@@ -9,11 +9,19 @@ import {
 } from "@agent-lantern/integrations";
 import { normalizedAgentEventSchema } from "@agent-lantern/protocol";
 
-import { loadReporterEnvironment } from "../configuration-file.js";
-import type { InstallOptions } from "./command-line.js";
+import type { ReporterDestination } from "../destinations.js";
 import {
+  collectDestinations,
+  destinationKeysIn,
+  parseSlotFromKey,
+} from "../destinations.js";
+import type { InstallOptions } from "./command-line.js";
+import { planDestinationEnvironment } from "./destination-plan.js";
+import {
+  assignmentPattern,
   mergeEnvironmentFile,
   removeEnvironmentKeys,
+  stripMatchingQuotes,
 } from "./environment-file.js";
 import {
   formatJsonDocument,
@@ -23,11 +31,43 @@ import {
 } from "./file-io.js";
 import { mergeHookDocument, removeHookDocument } from "./hook-merge.js";
 
-const managedEnvironmentKeys = [
-  "AGENT_LANTERN_DAEMON_ENDPOINT",
-  "AGENT_LANTERN_TOKEN",
-  "AGENT_LANTERN_HOST_NAME",
-] as const;
+/**
+ * 掃過檔案內容找出目前實際存在的目的地鍵（含編號後綴），uninstall 才能把它們
+ * 一併清乾淨，而不是只認得未編號的第一組。
+ */
+export function managedEnvironmentKeysIn(
+  content: string | undefined,
+): string[] {
+  const keys = new Set<string>();
+  for (const line of (content ?? "").split(/\r?\n/)) {
+    const match = assignmentPattern.exec(line);
+    const key = match?.[2];
+    if (key && parseSlotFromKey(key) !== undefined) {
+      keys.add(key);
+    }
+  }
+  keys.add("AGENT_LANTERN_HOST_NAME");
+  return [...keys];
+}
+
+/**
+ * 純粹解析成鍵值對，不像 loadReporterEnvironment 會混入 process.env，
+ * 這裡只需要判斷「檔案裡目前寫了哪些目的地」。
+ */
+export function parseEnvironmentAssignments(
+  content: string | undefined,
+): NodeJS.ProcessEnv {
+  const values: NodeJS.ProcessEnv = {};
+  for (const line of (content ?? "").split(/\r?\n/)) {
+    const match = assignmentPattern.exec(line);
+    const key = match?.[2];
+    if (!key) {
+      continue;
+    }
+    values[key] = stripMatchingQuotes(match[4] ?? "");
+  }
+  return values;
+}
 
 function environmentFilePath(
   processEnvironment: NodeJS.ProcessEnv = process.env,
@@ -176,27 +216,72 @@ async function runInstall(options: InstallOptions): Promise<void> {
     lines.push(`reporter 執行檔：${options.commandPath}（寫入絕對路徑）`);
   }
 
-  // 1. environment 檔（合併寫入，只更新 Agent Lantern 的鍵）。
+  // 1. environment 檔（合併寫入，只更新 Agent Lantern 的鍵，可能對應多台 daemon）。
   const environmentPath = environmentFilePath();
+  // 只帶一台 endpoint 重跑 install 時，設定檔裡原本那幾台仍然要一起驗證，
+  // 否則畫面會說「已寫入 3 個目的地」卻只驗了一個。
+  let destinationsToVerify: readonly ReporterDestination[] =
+    options.destinations;
   if (options.writeEnvironmentFile) {
-    if (!options.daemonEndpoint || !options.token) {
+    if (options.destinations.length === 0) {
       throw new Error(
         "缺少連線資訊。請加上 --endpoint 與 --token（可在 overlay 的「設定」面板複製），或改用 --skip-environment。",
       );
     }
 
     const existingContent = await readTextFileIfPresent(environmentPath);
-    const merged = mergeEnvironmentFile(existingContent, {
-      AGENT_LANTERN_DAEMON_ENDPOINT: options.daemonEndpoint,
-      AGENT_LANTERN_TOKEN: options.token,
-      AGENT_LANTERN_HOST_NAME: options.hostName,
+    const existingEnvironment = parseEnvironmentAssignments(existingContent);
+
+    // collectDestinations 不會因為單一槽位設定不良就整批丟出，problems 逐筆
+    // 印出來讓使用者看得到，而不是像過去的 try/catch 那樣把真正的 bug 也一起
+    // 吞掉、只留下「視為沒有既有目的地」造成孤兒鍵殘留。
+    const { destinations: existingDestinations, problems } =
+      collectDestinations(existingEnvironment);
+    for (const problem of problems) {
+      lines.push(`注意：${problem.message}`);
+    }
+    const existingKeys = destinationKeysIn(existingEnvironment);
+
+    const plan = planDestinationEnvironment({
+      existingDestinations,
+      existingKeys,
+      incoming: options.destinations,
+      replace: options.replaceDestinations,
     });
 
-    if (!merged.changed) {
+    const removal =
+      plan.staleKeys.length > 0
+        ? removeEnvironmentKeys(existingContent, plan.staleKeys)
+        : undefined;
+    const merged = mergeEnvironmentFile(removal?.content ?? existingContent, {
+      ...plan.desiredValues,
+      AGENT_LANTERN_HOST_NAME: options.hostName,
+    });
+    const changed = (removal?.changed ?? false) || merged.changed;
+    destinationsToVerify = plan.destinations;
+    const endpointSummary = plan.destinations
+      .map((destination) => destination.endpoint)
+      .join("、");
+    // --replace 之前先讓使用者從 --dry-run 看出哪些鍵會消失、哪些鍵會被改寫，
+    // 不然畫面只報「N 個目的地」看不出實際刪了什麼。
+    const removalSummary =
+      removal && removal.removedKeys.length > 0
+        ? `
+  將移除：${removal.removedKeys.join("、")}`
+        : "";
+    const changesSummary =
+      merged.changes.length > 0
+        ? `
+  將變更的鍵：${merged.changes.map((change) => change.key).join("、")}`
+        : "";
+
+    if (!changed) {
       lines.push(`${environmentPath}：內容已是最新，未變更。`);
     } else if (options.dryRun) {
       lines.push(
-        `${prefix}${environmentPath}：將更新 ${merged.changes.map((change) => change.key).join("、")}。`,
+        `${prefix}${environmentPath}：將寫入 ${plan.destinations.length} 個目的地（${endpointSummary}）。` +
+          removalSummary +
+          changesSummary,
       );
     } else {
       const written = await writeFileWithBackup(
@@ -205,8 +290,12 @@ async function runInstall(options: InstallOptions): Promise<void> {
         { mode: 0o600, createBackup: true },
       );
       lines.push(
-        `${environmentPath}：已更新 ${merged.changes.map((change) => change.key).join("、")}` +
-          (written.backupPath ? `（備份：${written.backupPath}）` : "（新建）"),
+        `${environmentPath}：已寫入 ${plan.destinations.length} 個目的地（${endpointSummary}）` +
+          (written.backupPath
+            ? `（備份：${written.backupPath}）`
+            : "（新建）") +
+          removalSummary +
+          changesSummary,
       );
     }
   } else {
@@ -270,25 +359,49 @@ async function runInstall(options: InstallOptions): Promise<void> {
   console.log(lines.join("\n"));
   lines.length = 0;
 
-  // 3. 連線驗證。
+  // 3. 連線驗證：多個目的地並行驗證，避免離線的機器一台一台序列等 timeout
+  // （3 台離線就要卡約 30 秒）；任一台離線不擋安裝，全部失敗才報錯。輸出順序
+  // 仍依 destinationsToVerify 原本的順序，不受完成先後影響。
   if (options.verifyConnection && !options.dryRun) {
-    const environment = await loadReporterEnvironment(process.env);
-    const daemonEndpoint = (
-      options.daemonEndpoint ?? environment.AGENT_LANTERN_DAEMON_ENDPOINT
-    )?.replace(/\/$/, "");
-    const token = options.token ?? environment.AGENT_LANTERN_TOKEN;
-
-    if (!daemonEndpoint || !token) {
+    if (destinationsToVerify.length === 0) {
       lines.push("跳過連線驗證：找不到 endpoint 或 token。");
     } else {
-      await verifyDaemonConnection(
-        daemonEndpoint,
-        token,
-        options.hostName || hostname(),
+      const results = await Promise.all(
+        destinationsToVerify.map(async (destination) => {
+          try {
+            await verifyDaemonConnection(
+              destination.endpoint,
+              destination.token,
+              options.hostName || hostname(),
+            );
+            return {
+              line: `連線驗證成功：${destination.endpoint}，overlay 應出現一張 Custom agent 卡片。`,
+              failureMessage: undefined as string | undefined,
+            };
+          } catch (error) {
+            const reason =
+              error instanceof Error ? error.message : String(error);
+            return {
+              line: `連線驗證失敗：${destination.endpoint}：${reason}`,
+              failureMessage: reason,
+            };
+          }
+        }),
       );
-      lines.push(
-        `連線驗證成功：${daemonEndpoint}，overlay 應出現一張 Custom agent 卡片。`,
-      );
+
+      const failureMessages: string[] = [];
+      for (const result of results) {
+        lines.push(result.line);
+        if (result.failureMessage !== undefined) {
+          failureMessages.push(result.failureMessage);
+        }
+      }
+      if (failureMessages.length === destinationsToVerify.length) {
+        // 逐台的結果先印出來，否則丟出後使用者只看得到錯誤訊息本身。
+        console.log(lines.join("\n"));
+        lines.length = 0;
+        throw new Error(failureMessages.join("\n\n"));
+      }
     }
   } else if (options.verifyConnection) {
     lines.push(`${prefix}跳過連線驗證。`);
@@ -350,9 +463,10 @@ async function runUninstall(options: InstallOptions): Promise<void> {
   const environmentPath = environmentFilePath();
   if (options.writeEnvironmentFile) {
     const existingContent = await readTextFileIfPresent(environmentPath);
-    const removal = removeEnvironmentKeys(existingContent, [
-      ...managedEnvironmentKeys,
-    ]);
+    const removal = removeEnvironmentKeys(
+      existingContent,
+      managedEnvironmentKeysIn(existingContent),
+    );
     if (!removal.changed) {
       lines.push(`${environmentPath}：沒有需要移除的設定。`);
     } else if (options.dryRun) {
