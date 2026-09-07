@@ -17,6 +17,7 @@ import {
   parseInstallCommandLine,
 } from "./install/command-line.js";
 import { runInstallCommand } from "./install/index.js";
+import { deliverEvent } from "./send.js";
 
 interface EventDetails {
   agentKind: AgentKind;
@@ -94,21 +95,21 @@ async function main(): Promise<void> {
     metadata: eventDetails.metadata,
   });
 
-  const response = await fetch(`${options.daemonEndpoint}/api/v1/events`, {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${options.token}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify(event),
-    signal: AbortSignal.timeout(2_500),
-  });
+  // 部分槽位設定不良但其他目的地仍可用時，送出前先把原因印出來，避免使用者
+  // 誤以為送到了實際上被略過的目的地。
+  for (const problem of options.destinationProblems) {
+    console.error(`agent-status-reporter: ${problem.message}`);
+  }
 
-  if (!response.ok) {
-    const responseText = await response.text();
-    throw new Error(
-      `Daemon rejected the event with ${response.status}: ${responseText}`,
+  const results = await deliverEvent(options.destinations, event);
+  const failures = results.filter((result) => !result.ok);
+  for (const failure of failures) {
+    console.error(
+      `agent-status-reporter: ${failure.destination.endpoint} 未送達：${failure.error}`,
     );
+  }
+  if (failures.length === results.length) {
+    throw new Error(`所有 ${results.length} 個目的地都送不出去。`);
   }
 }
 

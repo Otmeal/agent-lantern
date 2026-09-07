@@ -2,11 +2,18 @@ import { parseArgs } from "node:util";
 
 import { agentKindSchema, agentStatusSchema } from "@agent-lantern/protocol";
 
+import {
+  collectDestinations,
+  type DestinationProblem,
+  endpointKeyPrefix,
+  type ReporterDestination,
+} from "./destinations.js";
+
 export interface ReporterOptions {
   command: "hook" | "send";
   agentKind: "codex" | "claude" | "custom";
-  daemonEndpoint: string;
-  token: string;
+  destinations: ReporterDestination[];
+  destinationProblems: DestinationProblem[];
   status: ReturnType<typeof agentStatusSchema.parse> | undefined;
   sessionIdentifier: string | undefined;
   workspacePath: string | undefined;
@@ -40,16 +47,14 @@ export function parseCommandLine(
   });
 
   const agentKind = agentKindSchema.parse(parsedArguments.values.agent);
-  const daemonEndpoint =
-    parsedArguments.values["daemon-endpoint"] ??
-    environment.AGENT_LANTERN_DAEMON_ENDPOINT;
-  const token = parsedArguments.values.token ?? environment.AGENT_LANTERN_TOKEN;
-
-  if (!daemonEndpoint) {
-    throw new Error("AGENT_LANTERN_DAEMON_ENDPOINT is required.");
-  }
-  if (!token) {
-    throw new Error("AGENT_LANTERN_TOKEN is required.");
+  const { destinations, problems } = collectDestinations(environment, {
+    endpoint: parsedArguments.values["daemon-endpoint"],
+    token: parsedArguments.values.token,
+  });
+  // 一個有效目的地都湊不出來才丟出，訊息沿用單一目的地時代的文字。
+  if (destinations.length === 0) {
+    const detail = problems.map((problem) => problem.message).join("\n");
+    throw new Error(detail || `${endpointKeyPrefix} is required.`);
   }
 
   const statusValue = parsedArguments.values.status;
@@ -61,8 +66,8 @@ export function parseCommandLine(
   return {
     command: commandValue,
     agentKind,
-    daemonEndpoint: daemonEndpoint.replace(/\/$/, ""),
-    token,
+    destinations,
+    destinationProblems: problems,
     status,
     sessionIdentifier: parsedArguments.values["session-identifier"],
     workspacePath: parsedArguments.values["workspace-path"],
